@@ -1,0 +1,213 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Inventrix — Professional Inventory Management</title>
+<meta name="description" content="Inventrix — inventory management with borrowing, returning, history, camera scanning, and QR codes" />
+
+<script src="https://cdn.tailwindcss.com"></script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+<script src="https://unpkg.com/html5-qrcode@2.3.9/dist/html5-qrcode.min.js"></script>
+
+<style>
+body { font-family: 'Inter', sans-serif; margin:0; background:#f4f7fd; }
+.card-hover { transition: all .2s ease; border-radius:12px; }
+.card-hover:hover { transform: translateY(-6px); box-shadow: 0 10px 30px rgba(0,0,0,0.08); }
+.sidebar { background:#0b3b6f; color:white; min-height:100vh; }
+.sidebar button { color:white; text-align:left; padding:.75rem 1rem; border:none; width:100%; margin-bottom:.25rem; border-radius:6px; font-weight:600; text-transform:uppercase; }
+.sidebar button:hover, .sidebar button.active { background:#09426a; cursor:pointer; }
+.btn-primary { background:#0b3b6f; color:white; padding:.5rem 1rem; border:none; border-radius:6px; font-weight:600; }
+.btn-primary:hover { background:#09426a; cursor:pointer; }
+.btn-secondary { background:#e0e6f0; color:#0b3b6f; padding:.5rem 1rem; border:none; border-radius:6px; font-weight:600; }
+.btn-secondary:hover { background:#cfd8e5; cursor:pointer; }
+input, select { border:1px solid #cfd8e5; border-radius:6px; padding:.5rem; width:100%; }
+table th, table td { padding:.5rem; border-bottom:1px solid #e0e6f0; text-transform:uppercase; }
+</style>
+</head>
+<body>
+
+<!-- Login/Register Screen -->
+<div id="authScreen" class="flex items-center justify-center min-h-screen">
+  <div class="bg-white p-8 rounded-2xl shadow-lg w-full max-w-lg">
+    <h1 class="text-3xl font-bold mb-4 text-center text-[#0b3b6f]">Inventrix</h1>
+    <form id="authForm" onsubmit="event.preventDefault();" class="space-y-4">
+      <div>
+        <label class="block text-sm font-medium">Full Name</label>
+        <input id="nameInput" required placeholder="Enter your full name">
+      </div>
+      <div>
+        <label class="block text-sm font-medium">Role</label>
+        <select id="roleInput" onchange="onRoleChange()">
+          <option value="Student">Student</option>
+          <option value="Teacher">Teacher</option>
+        </select>
+      </div>
+      <div id="sectionWrap">
+        <label class="block text-sm font-medium">Section</label>
+        <input id="sectionInput" placeholder="e.g., BSBA 2A">
+      </div>
+      <div>
+        <label class="block text-sm font-medium">PIN (4 digits)</label>
+        <input id="pinInput" maxlength="4" pattern="\d{4}" inputmode="numeric" placeholder="1234">
+      </div>
+      <div class="flex gap-3">
+        <button type="button" class="btn-primary flex-1" onclick="registerUser()">Register</button>
+        <button type="button" class="btn-secondary flex-1" onclick="loginUser()">Login</button>
+      </div>
+      <p id="authMsg" class="text-red-600 hidden text-sm"></p>
+    </form>
+  </div>
+</div>
+
+<!-- App Shell -->
+<div id="app" class="hidden flex min-h-screen">
+  <aside class="sidebar w-72 p-6 hidden md:block">
+    <h2 class="text-2xl font-bold mb-4">INVENTRIX</h2>
+    <nav class="flex flex-col gap-2">
+      <button onclick="navigate('#/inventory')">INVENTORY</button>
+      <button onclick="navigate('#/borrow')">BORROW / RESERVE</button>
+      <button onclick="navigate('#/returned')">RETURNED ITEMS</button>
+      <button onclick="navigate('#/history')">HISTORY</button>
+      <button onclick="navigate('#/camera')">CAMERA SCAN</button>
+      <button onclick="navigate('#/qrcodes')">QR CODES</button>
+      <button class="text-red-500 mt-4" onclick="logout()">SIGN OUT</button>
+    </nav>
+  </aside>
+
+  <main class="flex-1 p-6 md:pl-72">
+    <header class="flex justify-between mb-6">
+      <h1 id="pageTitle" class="text-2xl font-bold uppercase">INVENTORY</h1>
+    </header>
+
+    <section id="page_inventory" class="page">
+      <div id="inventoryGrid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6"></div>
+    </section>
+
+    <section id="page_borrow" class="page hidden">
+      <h2 class="text-xl font-semibold mb-2 uppercase">BORROW / RESERVE FORM</h2>
+      <form id="borrowForm" class="space-y-2">
+        <label>Item<select id="formItem"></select></label>
+        <label>Action<select id="formAction"><option value="Borrowed">Borrow Now</option><option value="Reserved">Reserve</option></select></label>
+        <label>Location<input id="formLocation" placeholder="Enter location"></label>
+        <label>Borrow Date & Time<input type="datetime-local" id="formBorrowDate"></label>
+        <label>Expected Return<input type="datetime-local" id="formReturnDate"></label>
+        <label>Notes<input id="formNotes"></label>
+        <div class="flex gap-2">
+          <button type="button" class="btn-primary flex-1" onclick="submitForm()">Submit</button>
+          <button type="button" class="btn-secondary flex-1" onclick="clearForm()">Clear</button>
+        </div>
+      </form>
+    </section>
+
+    <section id="page_returned" class="page hidden">
+      <h2 class="text-xl font-semibold mb-2 uppercase">RETURNED ITEMS</h2>
+      <div id="returnedList" class="space-y-2"></div>
+    </section>
+
+    <section id="page_history" class="page hidden">
+      <h2 class="text-xl font-semibold mb-2 uppercase">TRANSACTION HISTORY</h2>
+      <div class="overflow-x-auto bg-white rounded shadow">
+        <table class="w-full text-left">
+          <thead><tr><th>ITEM</th><th>BORROWER</th><th>ROLE</th><th>SECTION</th><th>LOCATION</th><th>BORROWED</th><th>RETURNED</th><th>STATUS</th></tr></thead>
+          <tbody id="historyBody"></tbody>
+        </table>
+        <div class="mt-2 flex gap-2">
+          <button class="btn-primary" onclick="exportCSV()">EXPORT CSV</button>
+          <button class="btn-secondary" onclick="copyHistory()">COPY TO CLIPBOARD</button>
+        </div>
+      </div>
+    </section>
+
+    <section id="page_camera" class="page hidden">
+      <h2 class="text-xl font-semibold mb-2 uppercase">CAMERA SCAN</h2>
+      <div class="flex gap-2 mb-2">
+        <button class="btn-primary" onclick="startScanner()">START CAMERA</button>
+        <button class="btn-secondary" onclick="stopScanner()">STOP CAMERA</button>
+      </div>
+      <div id="qrScanner" class="w-full h-64 bg-black rounded"></div>
+    </section>
+
+    <section id="page_qrcodes" class="page hidden">
+      <h2 class="text-xl font-semibold mb-2 uppercase">QR CODES</h2>
+      <div id="qrCodesGrid" class="grid grid-cols-2 md:grid-cols-4 gap-4"></div>
+    </section>
+
+  </main>
+</div>
+
+<script>
+let INVENTORY=[], HISTORY=[], CURRENT_USER=null, html5QrScanner=null;
+
+// Load history from localStorage
+if(localStorage.getItem('inventrix_history')) HISTORY=JSON.parse(localStorage.getItem('inventrix_history'));
+
+INVENTORY=[
+  {id:'HDMI',name:'HDMI Cable',total:5,borrowed:0,reserved:0,code:'HDMI'},
+  {id:'REMOTE',name:'TV Remote',total:5,borrowed:0,reserved:0,code:'REMOTE'},
+  {id:'PROJECTOR',name:'Projector',total:5,borrowed:0,reserved:0,code:'PROJECTOR'},
+  {id:'SPEAKER',name:'Speaker',total:3,borrowed:0,reserved:0,code:'SPEAKER'},
+];
+for(let r=101;r<=110;r++) INVENTORY.push({id:'ROOM-'+r,name:'Classroom '+r,total:1,borrowed:0,reserved:0,code:'ROOM-'+r});
+
+function onRoleChange(){ document.getElementById('sectionWrap').style.display=document.getElementById('roleInput').value==='Student'?'block':'none'; }
+onRoleChange();
+
+function registerUser(){ CURRENT_USER={name:nameInput.value,role:roleInput.value,section:sectionInput.value}; localStorage.setItem('inventrix_user',JSON.stringify(CURRENT_USER)); enterApp(); }
+function loginUser(){ const user=localStorage.getItem('inventrix_user'); if(user){ CURRENT_USER=JSON.parse(user); enterApp(); }else{ alert('No user registered'); } }
+function enterApp(){ document.getElementById('authScreen').classList.add('hidden'); document.getElementById('app').classList.remove('hidden'); renderInventory(); renderForm(); renderQRCodes(); updateReturned(); updateHistory(); navigate('#/inventory'); }
+function logout(){location.reload();}
+
+function renderInventory(){ const grid=document.getElementById('inventoryGrid'); grid.innerHTML=''; INVENTORY.forEach(i=>{ const card=document.createElement('div'); card.className='bg-white p-4 rounded-lg card-hover'; let avail=i.total-i.borrowed-i.reserved; card.innerHTML=`<h3 class="font-semibold">${i.name}</h3><p>AVAILABLE: ${avail}</p>`; grid.appendChild(card); }); }
+
+function renderForm(){ const sel=document.getElementById('formItem'); sel.innerHTML=''; INVENTORY.forEach(i=> sel.add(new Option(i.name+' — '+i.id,i.id))); }
+function renderQRCodes(){ const grid=document.getElementById('qrCodesGrid'); grid.innerHTML=''; INVENTORY.forEach(i=>{ if(i.id==='HDMI' || i.id==='REMOTE' || i.id==='SPEAKER' || i.id.startsWith('ROOM')){ const div=document.createElement('div'); div.className='bg-white p-4 rounded-lg card-hover text-center cursor-pointer'; div.innerHTML=`<h3 class="font-semibold">${i.name}</h3><img src="https://api.qrserver.com/v1/create-qr-code/?data=${i.code}&size=100x100" alt="QR">`; div.onclick=()=>{ document.getElementById('formItem').value=i.id; navigate('#/borrow'); }; grid.appendChild(div); } }); }
+
+function submitForm(){ const itemId=document.getElementById('formItem').value;
+const action=document.getElementById('formAction').value;
+const borrowDate=document.getElementById('formBorrowDate').value || new Date().toISOString().slice(0,16);
+const returnDate=document.getElementById('formReturnDate').value;
+const notes=document.getElementById('formNotes').value;
+const location=document.getElementById('formLocation').value;
+const item=INVENTORY.find(x=>x.id===itemId);
+if(action==='Borrowed') item.borrowed+=1; else item.reserved+=1;
+HISTORY.push({item:item.name,borrower:CURRENT_USER.name,role:CURRENT_USER.role,section:CURRENT_USER.role==='Student'?CURRENT_USER.section:'',location,borrowed:borrowDate,returned:'',status:action,notes});
+localStorage.setItem('inventrix_history',JSON.stringify(HISTORY));
+updateReturned(); updateHistory(); renderInventory(); clearForm(); }
+function clearForm(){ document.getElementById('borrowForm').reset(); }
+
+function updateReturned(){ const div=document.getElementById('returnedList'); div.innerHTML=''; HISTORY.filter(h=>h.status==='Borrowed').forEach((h,i)=>{ const btn=document.createElement('button'); btn.className='btn-primary w-full'; btn.textContent=`Return ${h.item} borrowed by ${h.borrower}`; btn.onclick=()=>{ h.status='Returned'; h.returned=new Date().toISOString().slice(0,16); localStorage.setItem('inventrix_history',JSON.stringify(HISTORY)); renderInventory(); updateReturned(); updateHistory(); }; div.appendChild(btn); }); }
+
+function updateHistory(){ const tbody=document.getElementById('historyBody'); tbody.innerHTML=''; HISTORY.forEach(h=>{ const tr=document.createElement('tr'); tr.innerHTML=`<td>${h.item}</td><td>${h.borrower}</td><td>${h.role}</td><td>${h.section}</td><td>${h.location || ''}</td><td>${h.borrowed}</td><td>${h.returned}</td><td>${h.status}</td>`; tbody.appendChild(tr); }); }
+
+function navigate(hash){ document.querySelectorAll('.page').forEach(p=>p.classList.add('hidden'));
+if(hash==='#/inventory') document.getElementById('page_inventory').classList.remove('hidden');
+else if(hash==='#/borrow') document.getElementById('page_borrow').classList.remove('hidden');
+else if(hash==='#/returned') document.getElementById('page_returned').classList.remove('hidden');
+else if(hash==='#/history') document.getElementById('page_history').classList.remove('hidden');
+else if(hash==='#/camera') document.getElementById('page_camera').classList.remove('hidden');
+else if(hash==='#/qrcodes') document.getElementById('page_qrcodes').classList.remove('hidden');
+document.getElementById('pageTitle').textContent=hash.replace('#/','').replace('_',' ').toUpperCase();}
+window.addEventListener('hashchange',()=>navigate(location.hash));
+navigate('#/inventory');
+
+// Camera Scanner Functions
+function startScanner(){
+  if(html5QrScanner) return;
+  html5QrScanner = new Html5Qrcode('qrScanner');
+  Html5Qrcode.getCameras().then(cameras=>{
+    if(cameras.length>0){ html5QrScanner.start(cameras[0].id, {fps:10, qrbox:250}, qrSuccess, err=>{}); } 
+    else { alert('No camera found'); }
+  }).catch(()=>alert('No camera access'));
+}
+function stopScanner(){ if(html5QrScanner){ html5QrScanner.stop().then(()=>{ html5QrScanner.clear(); html5QrScanner=null; }); } }
+function qrSuccess(decodedText){ const item=INVENTORY.find(i=>i.code===decodedText); if(item){ document.getElementById('formItem').value=item.id; navigate('#/borrow'); stopScanner(); } }
+
+function exportCSV(){ let csv='Item,Borrower,Role,Section,Location,Borrowed,Returned,Status\n'; HISTORY.forEach(h=>{ csv+=`${h.item},${h.borrower},${h.role},${h.section},${h.location || ''},${h.borrowed},${h.returned},${h.status}\n`; });
+const blob=new Blob([csv],{type:'text/csv'}); const link=document.createElement('a'); link.href=URL.createObjectURL(blob); link.download='Inventrix_History.csv'; link.click(); }
+function copyHistory(){ let text=''; HISTORY.forEach(h=>{ text+=`${h.item} | ${h.borrower} | ${h.role} | ${h.section} | ${h.location || ''} | ${h.borrowed} | ${h.returned} | ${h.status}\n`; }); navigator.clipboard.writeText(text).then(()=>alert('History copied to clipboard')); }
+</script>
+
+</body>
+</html>
